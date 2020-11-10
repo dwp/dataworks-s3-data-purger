@@ -1,17 +1,16 @@
 #!/usr/bin/env python
-
 import ast
 import json
 import logging
-import os
-from datetime import date
 
+import os
+from boto3.dynamodb.conditions import Key, Attr
 import boto3
-import yaml
 from pythonjsonlogger import jsonlogger
 
-OLD_DATA_S3_PREFIX = "s3_prefix"
-NUM_OF_DAYS = "num_of_days"
+S3_PREFIX = "s3_prefix"
+NUM_OF_RETENTION_DAYS = "num_of_retention_days"
+DATA_PRODUCT_NAME = "data_product"
 
 
 def configure_log():
@@ -34,23 +33,16 @@ def configure_log():
     logger.addHandler(console_handler)
     return logger
 
-
-def today():
-    return str(date.today())
-
-
 def get_client(service_name):
     client = boto3.client(service_name)
     return client
 
-
 def get_resource(service_name):
-    return boto3.resource(service_name, region_name="${aws_default_region}")
-
+    #return boto3.resource(service_name, region_name="${aws_default_region}")
+    return boto3.resource(service_name, region_name="eu-west-2")
 
 def read_env_param(param_name):
     return os.getenv(param_name)
-
 
 def get_list_keys_for_prefix(s3_client, s3_publish_bucket, s3_prefix):
     keys = []
@@ -64,18 +56,60 @@ def get_list_keys_for_prefix(s3_client, s3_publish_bucket, s3_prefix):
     return keys
 
 
+def scan_table(dynamodb_resource,data_pipeline_metdata_table,data_product_name):
+    table = dynamodb_resource.Table(data_pipeline_metdata_table)
+    response = table.scan(FilterExpression=Attr('DataProduct').eq(data_product_name) & Attr('Status').eq('Completed'),
+                          ProjectionExpression="#Date",
+                          ExpressionAttributeNames = {"#Date": "Date"})
+    list_dates_dict = response['Items']
+    return list_dates_dict
+
+
 def handler(event: dict = {}, context: object = None) -> dict:
-    """Deletes old redundant S3 data based on s3_prefix and num_of_days parameters."""
+    """Deletes old S3 files based on s3_publish_bucket,s3_prefix ,data_pipeline_metdata_table, DataProduct and num_of_retention_days parameters."""
     logger = configure_log()
-    s3_bucket = read_env_param("S3_PUBLISH_BUCKET")
+    s3_publish_bucket = read_env_param("S3_PUBLISH_BUCKET")
     data_pipeline_metdata_table = read_env_param("DATA_PIPELINE_METADATA_TABLE")
-    s3_prefix = event[OLD_DATA_S3_PREFIX]
-    num_of_days = event[NUM_OF_DAYS]
 
+    if S3_PREFIX in event and NUM_OF_RETENTION_DAYS in event and  DATA_PRODUCT_NAME in event:
+        s3_prefix = event[S3_PREFIX]
+        num_of_retention_days = event[NUM_OF_RETENTION_DAYS]
+        data_product_name = event[DATA_PRODUCT_NAME]
+    elif "Records" in event:
+        sns_message = event["Records"][0]["Sns"]
+        payload = json.loads(sns_message["Message"])
+        s3_prefix = payload[S3_PREFIX]
+        num_of_retention_days = payload[NUM_OF_RETENTION_DAYS]
+        data_product_name = payload[DATA_PRODUCT_NAME]
 
+    s3_client = get_client("s3")
+    dynamodb_resource = get_resource("dynamodb")
+    list_dates_dict = scan_table(dynamodb_resource,data_pipeline_metdata_table,data_product_name)
+    #Remove duplicates if its runs multiple times in a day
+    unique_dict = [dict(t) for t in {tuple(d.items()) for d in list_dates_dict}]
 
-    return ""
+    list_of_dates = []
+    #Convert List of Dict to List of list
+    for idx, sub in enumerate(unique_dict, start = 0):
+        print(list(sub.values()))
+        list_of_dates.append(list(sub.values()))
+    list_of_dates.sort()
+    purge_list = list_of_dates[:len(list_of_dates)-num_of_retention_days]
+    logging.info("List of Dates to purge the s3 files :" + purge_list  )
+    #Get the S3 prefix keys
+    s3_keys = get_list_keys_for_prefix(s3_client, s3_publish_bucket, s3_prefix)
 
+    for purge_sublist in purge_list:
+        for date in purge_sublist:
+            for s3_prefix in s3_keys:
+                if date in s3_prefix:
+                    print(s3_prefix)
+                    try:
+                        response = s3_client.delete_object(Bucket=s3_publish_bucket,Key=s3_prefix)
+                        logging.info("Deleted S3 object of S3_BUCKET:" + s3_publish_bucket + "S3_PREFIX:" + s3_prefix )
+                    except Exception as e:
+                        print(e, "S3_BUCKET=", s3_publish_bucket,"S3_PREFIX=",s3_prefix )
+                        logger.error(e + "S3_BUCKET=" + s3_publish_bucket +"S3_PREFIX=" + s3_prefix)
 
 if __name__ == "__main__":
     logger = configure_log()
@@ -83,3 +117,4 @@ if __name__ == "__main__":
         handler()
     except Exception as e:
         logger.error(e)
+
