@@ -23,7 +23,7 @@ clean:
 
 s3-data-purger.zip: clean
 	mkdir -p dist
-	cp emr_launcher.py dist
+	cp s3_data_purger.py dist
 	pipenv install && \
 	VENV=$$(pipenv --venv) && \
 	cp -rf $${VENV}/lib/python3.7/site-packages/* dist/
