@@ -2,8 +2,9 @@
 
 ## Utility Lambda for deleting old redundant S3 data
 
-This repo contains Makefile to fit the standard pattern.
-This repo is a base to create new non-Terraform repos, adding the githooks submodule, making the repo ready for use.
+## What does it do?
 
-After cloning this repo, please run:  
-`make bootstrap`
+This is a generic Lambda function that can be used to delete redundant S3 data.
+It takes 3 parameters s3_prefix representing the location of data , num_of_retention_days and data product.
+Data processed successfully and older than num_of_retention_days will be deleted from location s3_prefix.
+
