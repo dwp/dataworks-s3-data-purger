@@ -120,7 +120,7 @@ def handler(event: dict = {}, context: object = None) -> dict:
     list_of_dates = []
     #Convert List of Dict to List of list
     for idx, sub in enumerate(unique_dict, start = 0):
-        print(list(sub.values()))
+        #print(list(sub.values()))
         list_of_dates.append(list(sub.values()))
     list_of_dates.sort()
     purge_list = list_of_dates[:len(list_of_dates)-num_of_retention_days]
@@ -132,7 +132,7 @@ def handler(event: dict = {}, context: object = None) -> dict:
         for date in purge_sublist:
             for s3_prefix in s3_keys:
                 if date in s3_prefix:
-                    print(s3_prefix)
+                    #print(s3_prefix)
                     try:
                         response = s3_client.delete_object(Bucket=s3_publish_bucket,Key=s3_prefix)
                         logging.info("Deleted S3 object of S3_BUCKET:" + s3_publish_bucket + "S3_PREFIX:" + s3_prefix )
