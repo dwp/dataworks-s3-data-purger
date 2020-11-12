@@ -124,7 +124,7 @@ def handler(event: dict = {}, context: object = None) -> dict:
         list_of_dates.append(list(sub.values()))
     list_of_dates.sort()
     purge_list = list_of_dates[:len(list_of_dates)-num_of_retention_days]
-    logging.info("List of Dates to purge the s3 files :" + purge_list  )
+    logging.info(purge_list)
     #Get the S3 prefix keys
     s3_keys = get_list_keys_for_prefix(s3_client, s3_publish_bucket, s3_prefix)
 
